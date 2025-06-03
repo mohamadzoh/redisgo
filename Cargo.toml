@@ -1,0 +1,22 @@
+[package]
+name = "redisgo"
+version = "0.1.0"
+edition = "2021"
+authors = ["Mohamad Al zohbie <alzoubi528@gmail.com>"]
+description= "package for handling redis in rust more easily"
+repository = "https://github.com/mohamadzoh/redisgo"
+readme = "README.md"
+keywords = ["redis", "easy", "database", "rust"]
+license = "MIT/Apache-2.0"
+
+[dependencies]
+redis = "0.31.0"
+
+[dev-dependencies]
+criterion = "0.6.0"
+
+
+# add benchmarks
+[[bench]]
+name = "bench"
+harness = false
