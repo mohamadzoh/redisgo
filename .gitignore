@@ -1,3 +1,21 @@
+# Build artifacts
 /target
+debug/
+*.pdb
 
+# Environment files
 .env
+.env.*
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Cargo lock (optional for libraries)
+Cargo.lock
