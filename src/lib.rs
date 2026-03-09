@@ -164,14 +164,7 @@ impl RedisGo {
     /// RedisGo::set("my_key", "my_value").unwrap();
     /// ```
     pub fn set(key: &str, value: &str) -> RedisResult<()> {
-        let redisgo = get_redisgo();
-        if redisgo.client.is_none() {
-            return Err(redis::RedisError::from((
-                redis::ErrorKind::Io,
-                "Redis client not initialized",
-            )));
-        }
-        redisgo.execute_with_connection(|conn| conn.set(key, value))
+        get_redisgo().execute_with_connection(|conn| conn.set(key, value))
     }
     /// Sets a key-value pair in Redis with an optional time-to-live (TTL).
     ///
@@ -192,16 +185,9 @@ impl RedisGo {
     /// // Set a key that expires in 60 seconds
     /// RedisGo::set_with_ttl("temp_key", "temp_value", Some(60)).unwrap();
     /// ```
-    pub fn set_with_ttl(key: &str, value: &str, ttl: Option<usize>) -> RedisResult<()> {
-        let redisgo = get_redisgo();
-        if redisgo.client.is_none() {
-            return Err(redis::RedisError::from((
-                redis::ErrorKind::Io,
-                "Redis client not initialized",
-            )));
-        }
-        redisgo.execute_with_connection(|conn| {
-            if let Some(ttl) = ttl.map(|t| t.try_into().unwrap()) {
+    pub fn set_with_ttl(key: &str, value: &str, ttl: Option<u64>) -> RedisResult<()> {
+        get_redisgo().execute_with_connection(|conn| {
+            if let Some(ttl) = ttl {
                 conn.set_ex(key, value, ttl)
             } else {
                 conn.set(key, value)
@@ -232,14 +218,7 @@ impl RedisGo {
     /// }
     /// ```
     pub fn get(key: &str) -> RedisResult<Option<String>> {
-        let redisgo = get_redisgo();
-        if redisgo.client.is_none() {
-            return Err(redis::RedisError::from((
-                redis::ErrorKind::Io,
-                "Redis client not initialized",
-            )));
-        }
-        redisgo.execute_with_connection(|conn| conn.get(key))
+        get_redisgo().execute_with_connection(|conn| conn.get(key))
     }
 
     /// Deletes a key from Redis.
@@ -259,14 +238,7 @@ impl RedisGo {
     /// RedisGo::delete("my_key").unwrap();
     /// ```
     pub fn delete(key: &str) -> RedisResult<()> {
-        let redisgo = get_redisgo();
-        if redisgo.client.is_none() {
-            return Err(redis::RedisError::from((
-                redis::ErrorKind::Io,
-                "Redis client not initialized",
-            )));
-        }
-        redisgo.execute_with_connection(|conn| conn.del(key))
+        get_redisgo().execute_with_connection(|conn| conn.del(key))
     }
 
     /// Checks if a key exists in Redis.
@@ -292,14 +264,7 @@ impl RedisGo {
     /// }
     /// ```
     pub fn exists(key: &str) -> RedisResult<bool> {
-        let redisgo = get_redisgo();
-        if redisgo.client.is_none() {
-            return Err(redis::RedisError::from((
-                redis::ErrorKind::Io,
-                "Redis client not initialized",
-            )));
-        }
-        redisgo.execute_with_connection(|conn| conn.exists(key))
+        get_redisgo().execute_with_connection(|conn| conn.exists(key))
     }
 
     /// Flushes all keys from all databases.
@@ -317,14 +282,7 @@ impl RedisGo {
     /// RedisGo::flush_all().unwrap();
     /// ```
     pub fn flush_all() -> RedisResult<()> {
-        let redisgo = get_redisgo();
-        if redisgo.client.is_none() {
-            return Err(redis::RedisError::from((
-                redis::ErrorKind::Io,
-                "Redis client not initialized",
-            )));
-        }
-        redisgo.execute_with_connection(|conn| conn.flushall())
+        get_redisgo().execute_with_connection(|conn| conn.flushall())
     }
 
     /// Returns a reference to the underlying Redis client.
@@ -354,21 +312,7 @@ impl RedisGo {
     ///
     /// Returns an error if the Redis client is not initialized or the connection fails.
     pub fn ping(&self) -> RedisResult<String> {
-        if self.client.is_none() {
-            return Err(redis::RedisError::from((
-                redis::ErrorKind::Io,
-                "Redis client not initialized",
-            )));
-        }
-        let mut conn_guard = self.get_connection()?;
-        if let Some(ref mut conn) = *conn_guard {
-            conn.ping()
-        } else {
-            Err(redis::RedisError::from((
-                redis::ErrorKind::Io,
-                "Connection not initialized",
-            )))
-        }
+        self.execute_with_connection(|conn| conn.ping())
     }
 
     /// Returns the current connection status as a human-readable string.

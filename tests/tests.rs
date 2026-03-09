@@ -5,9 +5,16 @@ use redisgo::RedisGo;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Mutex, OnceLock};
+
+    fn test_lock() -> &'static Mutex<()> {
+        static TEST_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        TEST_LOCK.get_or_init(|| Mutex::new(()))
+    }
 
     #[test]
     fn test_set_and_get() {
+        let _guard = test_lock().lock().unwrap();
 
         // Test setting a value
         RedisGo::set("test_key", "test_value").expect("Failed to set cache");
@@ -19,6 +26,7 @@ mod tests {
 
     #[test]
     fn test_get_nonexistent_key() {
+        let _guard = test_lock().lock().unwrap();
 
         // Test getting a nonexistent key
         let value = RedisGo::get("nonexistent_key").expect("Failed to get cache");
@@ -28,6 +36,8 @@ mod tests {
     // stress test to add and get 10000 keys
     #[test]
     fn test_stress_add_and_get() {
+        let _guard = test_lock().lock().unwrap();
+
         for i in 0..30000 {
             let key = format!("test_key_{}", i);
             let value = format!("test_value_{}", i);
@@ -39,6 +49,8 @@ mod tests {
 
     #[test]
     fn test_delete() {
+        let _guard = test_lock().lock().unwrap();
+
         RedisGo::set("delete_key", "delete_value").expect("Failed to set cache");
         RedisGo::delete("delete_key").expect("Failed to delete cache");
         let value = RedisGo::get("delete_key").expect("Failed to get cache");
@@ -47,6 +59,8 @@ mod tests {
 
     #[test]
     fn test_exists() {
+        let _guard = test_lock().lock().unwrap();
+
         RedisGo::set("exists_key", "exists_value").expect("Failed to set cache");
         let exists = RedisGo::exists("exists_key").expect("Failed to check existence");
         assert!(exists);
@@ -57,6 +71,8 @@ mod tests {
 
     #[test]
     fn test_flush_all() {
+        let _guard = test_lock().lock().unwrap();
+
         RedisGo::set("flush_key", "flush_value").expect("Failed to set cache");
         RedisGo::flush_all().expect("Failed to flush all caches");
         let value = RedisGo::get("flush_key").expect("Failed to get cache");
@@ -65,6 +81,8 @@ mod tests {
 
     #[test]
     fn test_ping() {
+        let _guard = test_lock().lock().unwrap();
+
         let redisgo = RedisGo::new().expect("Failed to initialize RedisGo");
         let response = redisgo.ping().expect("Failed to ping Redis");
         assert_eq!(response, "PONG");
@@ -73,6 +91,8 @@ mod tests {
 
     #[test]
     fn test_client_info() {
+        let _guard = test_lock().lock().unwrap();
+
         let redisgo = RedisGo::new().expect("Failed to initialize RedisGo");
         let client_info = redisgo.get_client_info();
         assert!(client_info.contains("Client Info"));
@@ -80,11 +100,12 @@ mod tests {
 
     #[test]
     fn test_set_with_ttl() {
+        let _guard = test_lock().lock().unwrap();
 
         // Test setting a key with TTL
         let key = "test_key_ttl";
         let value = "test_value";
-        let ttl = Some(10); // TTL of 10 seconds
+        let ttl = Some(10u64); // TTL of 10 seconds
 
         let result = RedisGo::set_with_ttl(key, value, ttl);
         assert!(result.is_ok(), "Failed to set key with TTL");
@@ -103,6 +124,8 @@ mod tests {
 
     #[test]
     fn test_set_without_ttl() {
+        let _guard = test_lock().lock().unwrap();
+
         // Test setting a key without TTL
         let key = "test_key_no_ttl";
         let value = "test_value";

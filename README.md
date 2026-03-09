@@ -58,17 +58,20 @@ RedisGo::set_with_ttl("key", "value", Some(60)).unwrap(); // TTL in seconds
 
 #### Ping Redis
 ```rust
-let response = RedisGo::ping().unwrap();
+let redisgo = RedisGo::new().unwrap();
+let response = redisgo.ping().unwrap();
 ```
 
 #### Get Connection Status
 ```rust
-let status = RedisGo::get_connection_status();
+let redisgo = RedisGo::new().unwrap();
+let status = redisgo.get_connection_status();
 ```
 
 #### Get Client Info
 ```rust
-let info = RedisGo::get_client_info();
+let redisgo = RedisGo::new().unwrap();
+let info = redisgo.get_client_info();
 ```
 
 ### Example Usage
