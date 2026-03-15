@@ -1,6 +1,6 @@
 [package]
 name = "redisgo"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 rust-version = "1.85"
 authors = ["Mohamad Al zohbie <alzoubi528@gmail.com>"]
@@ -23,8 +23,13 @@ exclude = [
 name = "redisgo"
 path = "src/lib.rs"
 
+[features]
+default = []
+dangerous = []
+
 [dependencies]
-redis = "1.0.5"
+redis = { version = "1.0.5", features = ["r2d2"] }
+r2d2 = "0.8.10"
 
 [dev-dependencies]
 criterion = "0.8.2"

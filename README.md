@@ -9,7 +9,14 @@ Add the following to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-redisgo = "*"
+redisgo = "0.3.0"
+```
+
+Enable destructive helpers explicitly:
+
+```toml
+[dependencies]
+redisgo = { version = "0.3.0", features = ["dangerous"] }
 ```
 
 ## Usage
@@ -31,7 +38,7 @@ RedisGo::set("key", "value")?;
 
 #### Get a Key
 ```rust
-let value = RedisGo::get("key")?;
+let value: Option<String> = RedisGo::get("key")?;
 ```
 
 #### Delete a Key
@@ -46,6 +53,7 @@ let exists = RedisGo::exists("key").unwrap();
 
 #### Flush All Keys
 ```rust
+#[cfg(feature = "dangerous")]
 RedisGo::flush_all().unwrap();
 ```
 
@@ -53,7 +61,14 @@ RedisGo::flush_all().unwrap();
 
 #### Set a Key with TTL
 ```rust
-RedisGo::set_with_ttl("key", "value", Some(60)).unwrap(); // TTL in seconds
+RedisGo::set_ex("key", "value", 60).unwrap(); // TTL in seconds
+```
+
+#### Typed Values
+```rust
+RedisGo::set(1_i64, 42_i64)?;
+let value: i64 = RedisGo::get(1_i64)?;
+RedisGo::delete(1_i64)?;
 ```
 
 #### Ping Redis
@@ -84,15 +99,15 @@ use redisgo::RedisGo;
 fn main() {
     println!("Hello, world!");
     let counter_key = "counter"; 
-    match RedisGo::get(counter_key) {
+    match RedisGo::get::<_, Option<i32>>(counter_key) {
         Ok(Some(value)) => {
-            let count: i32 = value.parse().unwrap_or(0);
+            let count = value;
             let new_count = count + 1;
-            RedisGo::set(counter_key, &new_count.to_string()).unwrap();
+            RedisGo::set(counter_key, new_count).unwrap();
             println!("Counter incremented to: {}", new_count);
         }
         Ok(None) => {
-            RedisGo::set(counter_key, "1").unwrap();
+            RedisGo::set(counter_key, 1_i32).unwrap();
             println!("Counter initialized to 1");
         }
         Err(e) => {

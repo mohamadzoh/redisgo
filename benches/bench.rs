@@ -26,7 +26,7 @@ fn benchmark_get(c: &mut Criterion) {
     group.warm_up_time(WARM_UP_TIME);
     group.bench_function("get", |b| {
         b.iter(|| {
-            let _ = RedisGo::get("bench_key").expect("Failed to get cache");
+            let _: Option<String> = RedisGo::get("bench_key").expect("Failed to get cache");
         });
     });
     group.finish();
@@ -58,6 +58,7 @@ fn benchmark_exists(c: &mut Criterion) {
     group.finish();
 }
 
+#[cfg(feature = "dangerous")]
 fn benchmark_flush_all(c: &mut Criterion) {
     let mut group = c.benchmark_group("redisgo::flush_all");
     group.sample_size(SAMPLE_SIZE);
@@ -71,6 +72,7 @@ fn benchmark_flush_all(c: &mut Criterion) {
     group.finish();
 }
 
+#[cfg(feature = "dangerous")]
 criterion_group!(
     benches,
     benchmark_set,
@@ -79,4 +81,14 @@ criterion_group!(
     benchmark_exists,
     benchmark_flush_all
 );
+
+#[cfg(not(feature = "dangerous"))]
+criterion_group!(
+    benches,
+    benchmark_set,
+    benchmark_get,
+    benchmark_delete,
+    benchmark_exists
+);
+
 criterion_main!(benches);
