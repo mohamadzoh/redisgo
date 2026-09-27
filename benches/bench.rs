@@ -5,8 +5,15 @@ use std::time::Duration;
 const SAMPLE_SIZE: usize = 100;
 const MEASUREMENT_TIME: Duration = Duration::from_secs(120);
 const WARM_UP_TIME: Duration = Duration::from_secs(30);
+const BENCH_REDIS_URL: &str = "redis://127.0.0.1/";
+const BENCH_POOL_SIZE: u32 = 16;
+
+fn init_bench() {
+    RedisGo::init(BENCH_REDIS_URL, BENCH_POOL_SIZE).expect("Failed to initialize RedisGo benchmark singleton");
+}
 
 fn benchmark_set(c: &mut Criterion) {
+    init_bench();
     let mut group = c.benchmark_group("redisgo::set");
     group.sample_size(SAMPLE_SIZE);
     group.measurement_time(MEASUREMENT_TIME);
@@ -20,6 +27,7 @@ fn benchmark_set(c: &mut Criterion) {
 }
 
 fn benchmark_get(c: &mut Criterion) {
+    init_bench();
     let mut group = c.benchmark_group("redisgo::get");
     group.sample_size(SAMPLE_SIZE);
     group.measurement_time(MEASUREMENT_TIME);
@@ -33,6 +41,7 @@ fn benchmark_get(c: &mut Criterion) {
 }
 
 fn benchmark_delete(c: &mut Criterion) {
+    init_bench();
     let mut group = c.benchmark_group("redisgo::delete");
     group.sample_size(SAMPLE_SIZE);
     group.measurement_time(MEASUREMENT_TIME);
@@ -46,6 +55,7 @@ fn benchmark_delete(c: &mut Criterion) {
 }
 
 fn benchmark_exists(c: &mut Criterion) {
+    init_bench();
     let mut group = c.benchmark_group("redisgo::exists");
     group.sample_size(SAMPLE_SIZE);
     group.measurement_time(MEASUREMENT_TIME);
@@ -60,6 +70,7 @@ fn benchmark_exists(c: &mut Criterion) {
 
 #[cfg(feature = "dangerous")]
 fn benchmark_flush_all(c: &mut Criterion) {
+    init_bench();
     let mut group = c.benchmark_group("redisgo::flush_all");
     group.sample_size(SAMPLE_SIZE);
     group.measurement_time(MEASUREMENT_TIME);

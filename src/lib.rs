@@ -8,18 +8,15 @@
 //!
 //! ## Quick Start
 //!
-//! Set the `REDIS_URL` environment variable or create a `.env` file:
-//!
-//! ```text
-//! REDIS_URL=redis://127.0.0.1/
-//! ```
-//!
-//! Then use the library:
+//! Initialize the client once with the Redis URL and pool size, then use the
+//! library anywhere in your application:
 //!
 //! ```rust,no_run
 //! use redisgo::RedisGo;
 //!
 //! fn main() -> redis::RedisResult<()> {
+//!     RedisGo::init("redis://127.0.0.1/", 32)?;
+//!
 //!     // Set a value
 //!     RedisGo::set("my_key", "my_value")?;
 //!
@@ -36,37 +33,39 @@
 
 use r2d2::{Pool, PooledConnection};
 use redis::{cmd, Commands, Connection, FromRedisValue, RedisResult, ToRedisArgs};
-use std::env;
-use std::fs;
 use std::sync::OnceLock;
 
 // Lazy static singleton
 static REDIS_GO: OnceLock<RedisGo> = OnceLock::new();
-const DEFAULT_POOL_SIZE: u32 = 16;
+pub const DEFAULT_POOL_SIZE: u32 = 16;
 
-/// Load `REDIS_URL` from environment or `.env` file
-fn get_redis_url() -> Option<String> {
-    // First check environment variable
-    if let Ok(url) = env::var("REDIS_URL") {
-        return Some(url);
+fn invalid_config(message: &'static str, detail: impl Into<String>) -> redis::RedisError {
+    redis::RedisError::from((redis::ErrorKind::InvalidClientConfig, message, detail.into()))
+}
+
+fn validate_redis_url(redis_url: impl Into<String>) -> RedisResult<String> {
+    let redis_url = redis_url.into();
+    let redis_url = redis_url.trim();
+
+    if redis_url.is_empty() {
+        return Err(invalid_config(
+            "Missing Redis configuration",
+            "redis_url must not be empty",
+        ));
     }
 
-    // Fall back to .env file
-    if let Ok(content) = fs::read_to_string(".env") {
-        for line in content.lines() {
-            let line = line.trim();
-            if line.starts_with('#') || line.is_empty() {
-                continue;
-            }
-            if let Some((k, v)) = line.split_once('=') {
-                if k.trim() == "REDIS_URL" {
-                    return Some(v.trim().to_string());
-                }
-            }
-        }
+    Ok(redis_url.to_string())
+}
+
+fn validate_pool_size(pool_size: u32) -> RedisResult<u32> {
+    if pool_size == 0 {
+        return Err(invalid_config(
+            "Invalid Redis pool size",
+            "pool_size must be greater than zero",
+        ));
     }
 
-    None
+    Ok(pool_size)
 }
 
 /// The main Redis client wrapper providing simplified access to Redis operations.
@@ -80,49 +79,73 @@ fn get_redis_url() -> Option<String> {
 /// ```rust,no_run
 /// use redisgo::RedisGo;
 ///
+/// RedisGo::init("redis://127.0.0.1/", 16).unwrap();
+///
 /// // Using static methods (recommended for most cases)
 /// RedisGo::set("key", "value").unwrap();
 /// let value: Option<String> = RedisGo::get("key").unwrap();
 ///
 /// // Using instance methods
-/// use redisgo::get_redisgo;
-/// let redis = get_redisgo();
+/// let redis = RedisGo::new("redis://127.0.0.1/", 16).unwrap();
 /// let status = redis.get_connection_status();
 /// ```
 pub struct RedisGo {
-    client: Option<redis::Client>,
-    pool: Option<Pool<redis::Client>>,
+    redis_url: String,
+    pool: Pool<redis::Client>,
 }
 
 impl RedisGo {
     /// Creates a new `RedisGo` instance.
     ///
-    /// This method loads the `REDIS_URL` from the environment or a `.env` file
-    /// and initializes the Redis client.
+    /// This method initializes the Redis client from the provided arguments.
     ///
     /// # Errors
     ///
-    /// Returns `Ok` even if the Redis URL is not set (client will be `None`).
-    /// Connection errors will occur when attempting to use the client.
-    pub fn new() -> RedisResult<Self> {
-        let redis_url = get_redis_url();
+    /// Returns an error if the Redis URL is invalid, the pool size is zero, or the
+    /// connection pool cannot be created.
+    pub fn new(redis_url: impl Into<String>, pool_size: u32) -> RedisResult<Self> {
+        let redis_url = validate_redis_url(redis_url)?;
+        let pool_size = validate_pool_size(pool_size)?;
+        let client = redis::Client::open(redis_url.clone())?;
+        let pool = Self::create_pool(&client, pool_size)?;
 
-        let client = match redis_url {
-            Some(url) => redis::Client::open(url).ok(),
-            None => None,
-        };
-
-        let pool = match &client {
-            Some(client) => Some(Self::create_pool(client)?),
-            None => None,
-        };
-
-        Ok(RedisGo { client, pool })
+        Ok(RedisGo { redis_url, pool })
     }
 
-    fn create_pool(client: &redis::Client) -> RedisResult<Pool<redis::Client>> {
+    /// Initializes the global `RedisGo` singleton.
+    ///
+    /// Repeated calls with the same configuration return the existing instance.
+    /// Calling this with a different configuration after initialization returns an error.
+    pub fn init(redis_url: impl Into<String>, pool_size: u32) -> RedisResult<&'static Self> {
+        let redis_url = validate_redis_url(redis_url)?;
+        let pool_size = validate_pool_size(pool_size)?;
+
+        if let Some(existing) = REDIS_GO.get() {
+            if existing.redis_url == redis_url && existing.pool.max_size() == pool_size {
+                return Ok(existing);
+            }
+
+            return Err(invalid_config(
+                "RedisGo already initialized",
+                format!(
+                    "existing config uses redis_url={} and pool_size={}",
+                    existing.redis_url,
+                    existing.pool.max_size()
+                ),
+            ));
+        }
+
+        let redisgo = Self::new(redis_url, pool_size)?;
+        let _ = REDIS_GO.set(redisgo);
+
+        Ok(REDIS_GO
+            .get()
+            .expect("RedisGo should be initialized after a successful init call"))
+    }
+
+    fn create_pool(client: &redis::Client, pool_size: u32) -> RedisResult<Pool<redis::Client>> {
         Pool::builder()
-            .max_size(DEFAULT_POOL_SIZE)
+            .max_size(pool_size)
             .build(client.clone())
             .map_err(|error| {
                 redis::RedisError::from((
@@ -134,9 +157,7 @@ impl RedisGo {
     }
 
     fn get_pool(&self) -> RedisResult<&Pool<redis::Client>> {
-        self.pool.as_ref().ok_or_else(|| {
-            redis::RedisError::from((redis::ErrorKind::Io, "Redis client not initialized"))
-        })
+        Ok(&self.pool)
     }
 
     fn get_connection(&self) -> RedisResult<PooledConnection<redis::Client>> {
@@ -165,6 +186,14 @@ impl RedisGo {
     }
 
     fn execute_with_connection<F, T>(&self, operation: F) -> RedisResult<T>
+    where
+        F: FnMut(&mut Connection) -> RedisResult<T>,
+    {
+        let mut operation = operation;
+        self.execute_operation(&mut operation)
+    }
+
+    fn execute_with_retry<F, T>(&self, operation: F) -> RedisResult<T>
     where
         F: FnMut(&mut Connection) -> RedisResult<T>,
     {
@@ -230,10 +259,11 @@ impl RedisGo {
         V: ToRedisArgs,
     {
         get_redisgo().execute_with_connection(|conn| {
-            cmd("SETEX")
+            cmd("SET")
                 .arg(&key)
-                .arg(ttl)
                 .arg(&value)
+                .arg("EX")
+                .arg(ttl)
                 .query::<()>(conn)
         })
     }
@@ -246,7 +276,8 @@ impl RedisGo {
     ///
     /// # Returns
     ///
-    /// Returns `Ok(Some(value))` if the key exists, `Ok(None)` if it doesn't.
+    /// Returns the value decoded as `V`.
+    /// Use `Option<T>` when the key may be missing.
     ///
     /// # Errors
     ///
@@ -266,7 +297,7 @@ impl RedisGo {
         K: ToRedisArgs,
         V: FromRedisValue,
     {
-        get_redisgo().execute_with_connection(|conn| cmd("GET").arg(&key).query(conn))
+        get_redisgo().execute_with_retry(|conn| cmd("GET").arg(&key).query(conn))
     }
 
     /// Deletes a key from Redis.
@@ -319,7 +350,7 @@ impl RedisGo {
     where
         K: ToRedisArgs,
     {
-        get_redisgo().execute_with_connection(|conn| cmd("EXISTS").arg(&key).query(conn))
+        get_redisgo().execute_with_retry(|conn| cmd("EXISTS").arg(&key).query(conn))
     }
 
     /// Flushes all keys from all databases.
@@ -345,13 +376,13 @@ impl RedisGo {
         get_redisgo().execute_with_connection(|conn| conn.flushall())
     }
 
-    /// Returns a reference to the underlying Redis client.
+    /// Returns a newly constructed Redis client using the current configuration.
     ///
     /// # Panics
     ///
-    /// Panics if the Redis client is not initialized.
-    pub fn get_client(&self) -> &redis::Client {
-        self.client.as_ref().expect("Redis client not initialized")
+    /// Panics if the stored Redis URL is invalid.
+    pub fn get_client(&self) -> redis::Client {
+        redis::Client::open(self.redis_url.clone()).expect("Redis client not initialized")
     }
 
     /// Checks whether Redis currently responds to a `PING` command.
@@ -371,7 +402,7 @@ impl RedisGo {
     ///
     /// Returns an error if the Redis client is not initialized or the connection fails.
     pub fn ping(&self) -> RedisResult<String> {
-        self.execute_with_connection(|conn| conn.ping())
+        self.execute_with_retry(|conn| conn.ping())
     }
 
     /// Returns the current connection status as a human-readable string.
@@ -383,9 +414,15 @@ impl RedisGo {
         }
     }
 
-    /// Returns information about the Redis client configuration.
+    /// Returns information about the Redis connection pool.
     pub fn get_client_info(&self) -> String {
-        format!("Client Info: {:?}", self.client.as_ref().map(|c| c.get_connection_info()))
+        let state = self.pool.state();
+        format!(
+            "Pool Info: max_size={}, connections={}, idle_connections={}",
+            self.pool.max_size(),
+            state.connections,
+            state.idle_connections
+        )
     }
 }
 
@@ -393,6 +430,7 @@ impl RedisGo {
 mod tests {
     use super::*;
     use redis::cmd;
+    use std::net::{SocketAddr, TcpStream};
     use std::sync::{Arc, Barrier, Mutex, OnceLock};
     use std::thread;
     use std::time::{Duration, Instant};
@@ -402,11 +440,23 @@ mod tests {
         TEST_LOCK.get_or_init(|| Mutex::new(()))
     }
 
+    fn redis_available() -> bool {
+        let address: SocketAddr = "127.0.0.1:6379".parse().expect("Invalid test Redis address");
+        TcpStream::connect_timeout(&address, Duration::from_millis(200)).is_ok()
+    }
+
     #[test]
     fn test_concurrent_commands_use_separate_connections() {
-        let _guard = test_lock().lock().unwrap();
+        let _guard = test_lock().lock().unwrap_or_else(|error| error.into_inner());
 
-        let redisgo = Arc::new(RedisGo::new().expect("Failed to initialize RedisGo"));
+        if !redis_available() {
+            return;
+        }
+
+        let redisgo = Arc::new(
+            RedisGo::new("redis://127.0.0.1/", DEFAULT_POOL_SIZE)
+                .expect("Failed to initialize RedisGo"),
+        );
         let barrier = Arc::new(Barrier::new(2));
         let list_key = "redisgo_blocking_list";
 
@@ -447,31 +497,55 @@ mod tests {
 
         worker.join().unwrap();
     }
-}
 
-impl Default for RedisGo {
-    fn default() -> Self {
-        Self::new().expect("Failed to initialize RedisGo")
+    #[test]
+    fn test_new_rejects_empty_redis_url() {
+        let error = RedisGo::new("   ", DEFAULT_POOL_SIZE)
+            .err()
+            .expect("Expected an invalid configuration error");
+        assert_eq!(error.kind(), redis::ErrorKind::InvalidClientConfig);
+    }
+
+    #[test]
+    fn test_new_rejects_zero_pool_size() {
+        let error = RedisGo::new("redis://127.0.0.1/", 0)
+            .err()
+            .expect("Expected an invalid configuration error");
+        assert_eq!(error.kind(), redis::ErrorKind::InvalidClientConfig);
+    }
+
+    #[test]
+    fn test_init_returns_existing_instance_for_same_config() {
+        let _guard = test_lock().lock().unwrap_or_else(|error| error.into_inner());
+
+        if !redis_available() {
+            return;
+        }
+
+        let first = RedisGo::init("redis://127.0.0.1/", DEFAULT_POOL_SIZE)
+            .expect("Failed to initialize RedisGo") as *const RedisGo;
+        let second = RedisGo::init("redis://127.0.0.1/", DEFAULT_POOL_SIZE)
+            .expect("Failed to reuse initialized RedisGo") as *const RedisGo;
+
+        assert_eq!(first, second);
     }
 }
 
 /// Returns a reference to the global `RedisGo` singleton instance.
 ///
-/// This function initializes the singleton on first call and returns
-/// the same instance on subsequent calls.
-///
-/// # Panics
-///
-/// Panics if the `RedisGo` instance cannot be created.
+/// Call `RedisGo::init(redis_url, pool_size)` before using this function.
 ///
 /// # Example
 ///
 /// ```rust,no_run
-/// use redisgo::get_redisgo;
+/// use redisgo::{get_redisgo, RedisGo};
 ///
+/// RedisGo::init("redis://127.0.0.1/", 16).unwrap();
 /// let redis = get_redisgo();
 /// println!("Status: {}", redis.get_connection_status());
 /// ```
 pub fn get_redisgo() -> &'static RedisGo {
-    REDIS_GO.get_or_init(|| RedisGo::new().expect("Failed to initialize RedisGo"))
+    REDIS_GO.get().expect(
+        "RedisGo is not initialized. Call RedisGo::init(redis_url, pool_size) before using global operations",
+    )
 }

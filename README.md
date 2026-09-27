@@ -1,6 +1,6 @@
 # RedisGo
 
-RedisGo is a Rust library designed to simplify interactions with Redis, providing a convenient API for common Redis operations such as setting, getting, deleting keys, and more. It leverages the `redis` crate and includes features like connection management and `.env` file support for configuration.
+RedisGo is a synchronous Rust library designed to simplify interactions with Redis, providing a convenient API for common Redis operations such as setting, getting, deleting keys, and more. It leverages the `redis` crate, uses an r2d2 connection pool, and is configured explicitly at startup.
 
 
 ## Installation
@@ -23,37 +23,52 @@ redisgo = { version = "0.3.0", features = ["dangerous"] }
 
 ### Initialization
 
-Ensure your `.env` file contains the `REDIS_URL` variable:
+Initialize the global client once with the Redis URL and pool size you want to use:
 
+```rust
+use redisgo::RedisGo;
+
+RedisGo::init("redis://127.0.0.1/", 32).unwrap();
 ```
-REDIS_URL=redis://127.0.0.1/
+
+If you prefer not to use the global singleton, create an instance directly:
+
+```rust
+use redisgo::RedisGo;
+
+let redisgo = RedisGo::new("redis://127.0.0.1/", 32).unwrap();
 ```
 
 ### Basic Operations
 
 #### Set a Key
 ```rust
-RedisGo::set("key", "value")?;
+RedisGo::init("redis://127.0.0.1/", 32).unwrap();
+RedisGo::set("key", "value").unwrap();
 ```
 
 #### Get a Key
 ```rust
-let value: Option<String> = RedisGo::get("key")?;
+RedisGo::init("redis://127.0.0.1/", 32).unwrap();
+let value: Option<String> = RedisGo::get("key").unwrap();
 ```
 
 #### Delete a Key
 ```rust
+RedisGo::init("redis://127.0.0.1/", 32).unwrap();
 RedisGo::delete("key").unwrap();
 ```
 
 #### Check if a Key Exists
 ```rust
+RedisGo::init("redis://127.0.0.1/", 32).unwrap();
 let exists = RedisGo::exists("key").unwrap();
 ```
 
 #### Flush All Keys
 ```rust
 #[cfg(feature = "dangerous")]
+RedisGo::init("redis://127.0.0.1/", 32).unwrap();
 RedisGo::flush_all().unwrap();
 ```
 
@@ -61,33 +76,37 @@ RedisGo::flush_all().unwrap();
 
 #### Set a Key with TTL
 ```rust
+RedisGo::init("redis://127.0.0.1/", 32).unwrap();
 RedisGo::set_ex("key", "value", 60).unwrap(); // TTL in seconds
 ```
 
 #### Typed Values
 ```rust
-RedisGo::set(1_i64, 42_i64)?;
-let value: i64 = RedisGo::get(1_i64)?;
-RedisGo::delete(1_i64)?;
+RedisGo::init("redis://127.0.0.1/", 32).unwrap();
+RedisGo::set(1_i64, 42_i64).unwrap();
+let value: i64 = RedisGo::get(1_i64).unwrap();
+RedisGo::delete(1_i64).unwrap();
 ```
 
 #### Ping Redis
 ```rust
-let redisgo = RedisGo::new().unwrap();
+let redisgo = RedisGo::new("redis://127.0.0.1/", 32).unwrap();
 let response = redisgo.ping().unwrap();
 ```
 
 #### Get Connection Status
 ```rust
-let redisgo = RedisGo::new().unwrap();
+let redisgo = RedisGo::new("redis://127.0.0.1/", 32).unwrap();
 let status = redisgo.get_connection_status();
 ```
 
 #### Get Client Info
 ```rust
-let redisgo = RedisGo::new().unwrap();
+let redisgo = RedisGo::new("redis://127.0.0.1/", 32).unwrap();
 let info = redisgo.get_client_info();
 ```
+
+`get_client_info()` reports connection-pool state, including max pool size and active versus idle connections.
 
 ### Example Usage
 
@@ -97,6 +116,7 @@ Here is an example of how to use the RedisGo library to implement a simple count
 use redisgo::RedisGo;
 
 fn main() {
+    RedisGo::init("redis://127.0.0.1/", 32).unwrap();
     println!("Hello, world!");
     let counter_key = "counter"; 
     match RedisGo::get::<_, Option<i32>>(counter_key) {
