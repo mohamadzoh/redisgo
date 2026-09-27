@@ -9,14 +9,20 @@ Add the following to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-redisgo = "0.3.0"
+redisgo = "0.4.1"
 ```
 
 Enable destructive helpers explicitly:
 
 ```toml
 [dependencies]
-redisgo = { version = "0.3.0", features = ["dangerous"] }
+redisgo = { version = "0.4.1", features = ["dangerous"] }
+```
+
+The minimum supported Rust version is 1.85. On Rust 1.85 or 1.86, pin one transitive dependency that needs a newer compiler without declaring it:
+
+```sh
+cargo update -p yoke-derive --precise 0.8.2
 ```
 
 ## Usage
